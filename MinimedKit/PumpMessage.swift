@@ -22,10 +22,10 @@ public struct PumpMessage : CustomStringConvertible {
     }
 
     public init?(rxData: Data) {
-        guard rxData.count >= 7,
+        guard rxData.count >= 6,
             let packetType = PacketType(rawValue: rxData[0]), packetType != .meter,
             let messageType = MessageType(rawValue: rxData[4]),
-            let messageBody = messageType.bodyType.init(rxData: rxData.subdata(in: 5..<rxData.count - 1))
+            let messageBody = messageType.bodyType.init(rxData: rxData.subdata(in: 5..<rxData.count))
         else {
             return nil
         }
@@ -40,18 +40,15 @@ public struct PumpMessage : CustomStringConvertible {
         var buffer = [UInt8]()
 
         buffer.append(packetType.rawValue)
-        buffer += address[0...2]
+        buffer += address[0..<3]
         buffer.append(messageType.rawValue)
+        buffer.append(contentsOf: messageBody.txData)
 
-        var data = Data(bytes: buffer)
-
-        data.append(messageBody.txData)
-
-        return data
+        return Data(bytes: buffer)
     }
     
     public var description: String {
-        return String(format: NSLocalizedString("PumpMessage(%1$@, %2$@, %3$@, %4$@)", comment: "The format string describing a pump message. (1: The packet type)(2: The message type)(3: The message address)(4: The message data"), String(describing: self.packetType), String(describing: self.messageType), self.address.hexadecimalString, self.messageBody.txData.hexadecimalString)
+        return String(format: NSLocalizedString("PumpMessage(%1$@, %2$@, %3$@, %4$@)", comment: "The format string describing a pump message. (1: The packet type)(2: The message type)(3: The message address)(4: The message data"), String(describing: packetType), String(describing: messageType), String(describing: address), String(describing: self.messageBody.txData))
     }
 
 }

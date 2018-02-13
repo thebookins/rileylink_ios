@@ -6,7 +6,6 @@
 //  Copyright © 2016 Pete Schwamb. All rights reserved.
 //
 
-import UIKit
 import MinimedKit
 import Crypto
 
@@ -36,35 +35,16 @@ public class NightscoutUploader {
     private(set) var entries = [NightscoutEntry]()
     private(set) var deviceStatuses = [[String: Any]]()
     private(set) var treatmentsQueue = [NightscoutTreatment]()
-    
-    private(set) var lastMeterMessageRxTime: Date?
-    
-    public private(set) var observingPumpEventsSince: Date!
 
-    private(set) var lastStoredTreatmentTimestamp: Date? {
-        get {
-            return UserDefaults.standard.lastStoredTreatmentTimestamp
-        }
-        set {
-            UserDefaults.standard.lastStoredTreatmentTimestamp = newValue
-        }
-    }
+    private(set) var lastMeterMessageRxTime: Date?
 
     public var errorHandler: ((_ error: Error, _ context: String) -> Void)?
 
-    private var dataAccessQueue: DispatchQueue = DispatchQueue(label: "com.rileylink.NightscoutUploadKit.dataAccessQueue", attributes: [])
-
-
-    public func reset() {
-        observingPumpEventsSince = Date(timeIntervalSinceNow: TimeInterval(hours: -24))
-        lastStoredTreatmentTimestamp = nil
-    }
+    private var dataAccessQueue: DispatchQueue = DispatchQueue(label: "com.rileylink.NightscoutUploadKit.dataAccessQueue", qos: .utility)
 
     public init(siteURL: URL, APISecret: String) {
         self.siteURL = siteURL
         self.apiSecret = APISecret
-        
-        observingPumpEventsSince = lastStoredTreatmentTimestamp ?? Date(timeIntervalSinceNow: TimeInterval(hours: -24))
     }
     
     // MARK: - Processing data from pump
@@ -77,33 +57,6 @@ public class NightscoutUploader {
      - parameter pumpModel: The pump model info associated with the events
      */
     public func processPumpEvents(_ events: [TimestampedHistoryEvent], source: String, pumpModel: PumpModel) {
-        
-        // Find valid event times
-        let newestEventTime = events.last?.date
-        
-        // Find the oldest event that might still be updated.
-        var oldestUpdatingEventDate: Date?
-
-        for event in events {
-            switch event.pumpEvent {
-            case let bolus as BolusNormalPumpEvent:
-                let deliveryFinishDate = event.date.addingTimeInterval(bolus.duration)
-                if newestEventTime == nil || deliveryFinishDate.compare(newestEventTime!) == .orderedDescending {
-                    // This event might still be updated.
-                    oldestUpdatingEventDate = event.date
-                    break
-                }
-            default:
-                continue
-            }
-        }
-        
-        if oldestUpdatingEventDate != nil {
-            observingPumpEventsSince = oldestUpdatingEventDate!
-        } else if newestEventTime != nil {
-            observingPumpEventsSince = newestEventTime!
-        }
-        
         for treatment in NightscoutPumpEvents.translate(events, eventSource: source) {
             treatmentsQueue.append(treatment)
         }
@@ -145,7 +98,7 @@ public class NightscoutUploader {
 
     /// Attempts to modify nightscout treatments. This method will not retry if the network task failed.
     ///
-    /// - parameter treatments:        An array of nightscout treatments. The id attribute must be set, identifying the treatment to update.
+    /// - parameter treatments:        An array of nightscout treatments. The id attribute must be set, identifying the treatment to update.  Treatments without id will be ignored.
     /// - parameter completionHandler: A closure to execute when the task completes. It has a single argument for any error that might have occurred during the modify.
     public func modifyTreatments(_ treatments:[NightscoutTreatment], completionHandler: @escaping (Error?) -> Void) {
         dataAccessQueue.async {
@@ -153,6 +106,9 @@ public class NightscoutUploader {
             var errors = [Error]()
 
             for treatment in treatments {
+                guard treatment.id != nil, treatment.id != "NA" else {
+                    continue
+                }
                 modifyGroup.enter()
                 self.putToNS( treatment.dictionaryRepresentation, endpoint: defaultNightscoutTreatmentPath ) { (error) in
                     if let error = error {
@@ -178,6 +134,9 @@ public class NightscoutUploader {
             var errors = [Error]()
 
             for id in ids {
+                guard id != "NA" else {
+                    continue
+                }
                 deleteGroup.enter()
                 self.deleteFromNS(id, endpoint: defaultNightscoutTreatmentPath) { (error) in
                     if let error = error {
@@ -282,7 +241,7 @@ public class NightscoutUploader {
             lastMeterMessageRxTime = date
         }
     }
-    
+
     // MARK: - Uploading
     
     func flushAll() {
@@ -323,9 +282,9 @@ public class NightscoutUploader {
 
         callNS(json, endpoint: endpoint, method: "POST") { (result) in
             switch result {
-            case .success(let json):
-                guard let insertedEntries = json as? [[String: Any]] else {
-                    completion(.failure(UploadError.invalidResponse(reason: "Expected array of objects in JSON response")))
+            case .success(let postResponse):
+                guard let insertedEntries = postResponse as? [[String: Any]], insertedEntries.count == json.count else {
+                    completion(.failure(UploadError.invalidResponse(reason: "Expected array of \(json.count) objects in JSON response")))
                     return
                 }
 
@@ -377,9 +336,9 @@ public class NightscoutUploader {
                         completion(.failure(error))
                         return
                     }
-
-                    guard let data = data else {
-                        completion(.failure(UploadError.invalidResponse(reason: "No data in response")))
+                    
+                    guard let data = data, !data.isEmpty else {
+                        completion(.success([]))
                         return
                     }
 
@@ -470,10 +429,8 @@ public class NightscoutUploader {
                 self.errorHandler?(error, "Uploading nightscout treatment records")
                 // Requeue
                 self.treatmentsQueue.append(contentsOf: inFlight)
-            case .success(_):
-                if let last = inFlight.last {
-                    self.lastStoredTreatmentTimestamp = last.timestamp
-                }
+            case .success:
+                break
             }
         }
     }
