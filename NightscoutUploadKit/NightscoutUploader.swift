@@ -9,6 +9,7 @@
 import UIKit
 import MinimedKit
 import Crypto
+import HealthKit
 
 public enum UploadError: Error {
     case httpError(status: Int, body: String)
@@ -267,6 +268,13 @@ public class NightscoutUploader {
             let entry = NightscoutEntry(glucose: glucose, timestamp: sensorDate, device: device, glucoseType: .Sensor, previousSGV: previousSGV, previousSGVNotActive: previousSGVNotActive, direction: direction)
             entries.append(entry)
         }
+        flushAll()
+    }
+    
+    public func uploadSGVFromxDripG5(quantity: HKQuantity, readDate: Date, device: String) {
+        let glucoseValueForUpload: Int = Int(quantity.doubleValue(for: HKUnit.milligramsPerDeciliterUnit()))
+        let entry = NightscoutEntry(glucose: glucoseValueForUpload, timestamp: readDate, device: device, glucoseType: .Sensor, direction: "--")
+        entries.append(entry)
         flushAll()
     }
     
