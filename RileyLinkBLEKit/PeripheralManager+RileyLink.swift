@@ -27,6 +27,13 @@ enum MainServiceCharacteristicUUID: String, CBUUIDRawValue {
     case customName      = "D93B2AF0-1E28-11E4-8C21-0800200C9A66"
     case timerTick       = "6E6C7910-B89E-43A5-78AF-50C5E2B86F7E"
     case firmwareVersion = "30D99DC9-7C91-4295-A051-0A104D238CF2"
+    case ledMode         = "C6D84241-F1A7-4F9C-A25F-FCE16732F14E"
+}
+
+enum RileyLinkLEDMode: UInt8 {
+    case off  = 0x00
+    case on   = 0x01
+    case auto = 0x02
 }
 
 
@@ -39,7 +46,8 @@ extension PeripheralManager.Configuration {
                     MainServiceCharacteristicUUID.responseCount.cbUUID,
                     MainServiceCharacteristicUUID.customName.cbUUID,
                     MainServiceCharacteristicUUID.timerTick.cbUUID,
-                    MainServiceCharacteristicUUID.firmwareVersion.cbUUID
+                    MainServiceCharacteristicUUID.firmwareVersion.cbUUID,
+                    MainServiceCharacteristicUUID.ledMode.cbUUID
                 ]
             ],
             notifyingCharacteristics: [
@@ -126,6 +134,22 @@ extension PeripheralManager {
             }
         }
     }
+
+    func setLEDMode(mode: RileyLinkLEDMode) {
+        perform { (manager) in
+            do {
+                guard let characteristic = manager.peripheral.getCharacteristicWithUUID(.ledMode) else {
+                    throw PeripheralManagerError.unknownCharacteristic
+                }
+                let value = Data([mode.rawValue])
+                try manager.writeValue(value, for: characteristic, type: .withResponse, timeout: PeripheralManager.expectedMaxBLELatency)
+            } catch (let error) {
+                assertionFailure(String(describing: error))
+            }
+        }
+    }
+
+    
 
     func startIdleListening(idleTimeout: TimeInterval, channel: UInt8, timeout: TimeInterval = expectedMaxBLELatency, completion: @escaping (_ error: RileyLinkDeviceError?) -> Void) {
         perform { (manager) in
@@ -227,9 +251,13 @@ extension PeripheralManager {
 
         log.debug("RL Send: %@", value.hexadecimalString)
 
-        try writeValue(value, for: characteristic, type: .withResponse, timeout: timeout)
+        do {
+            try writeValue(value, for: characteristic, type: .withResponse, timeout: timeout)
+        } catch let error as PeripheralManagerError {
+            throw RileyLinkDeviceError.peripheralManagerError(error)
+        }
     }
-
+    
     /// - Throws:
     ///     - RileyLinkDeviceError.invalidResponse
     ///     - RileyLinkDeviceError.peripheralManagerError
@@ -293,27 +321,31 @@ extension PeripheralManager {
                 }
 
                 addCondition(.valueUpdate(characteristic: characteristic, matching: { value in
-                    guard let value = value else {
+                    guard let value = value, value.count > 0 else {
+                        log.debug("Empty response from RileyLink. Continuing to listen for command response.")
                         return false
                     }
-
+                    
                     log.debug("RL Recv(single): %@", value.hexadecimalString)
 
-                    guard let response = R(data: value) else {
-                        // We don't recognize the contents. Keep listening.
+                    guard let code = ResponseCode(rawValue: value[0]) else {
+                        let unknownCode = value[0..<1].hexadecimalString
+                        log.error("Unknown response code from RileyLink: %{public}@. Continuing to listen for command response.", unknownCode)
                         return false
                     }
 
-                    switch response.code {
-                    case .rxTimeout, .zeroData, .invalidParam, .unknownCommand:
-                        log.debug("RileyLink response: %{public}@", String(describing: response))
-                        capturedResponse = response
-                        return true
+                    switch code {
                     case .commandInterrupted:
                         // This is expected in cases where an "Idle" GetPacket command is running
-                        log.debug("RileyLink response: %{public}@", String(describing: response))
+                        log.debug("Idle command interrupted. Continuing to listen for command response.")
                         return false
-                    case .success:
+                    default:
+                        guard let response = R(data: value) else {
+                            log.error("Unable to parse response.")
+                            // We don't recognize the contents. Keep listening.
+                            return false
+                        }
+                        log.debug("RileyLink response: %{public}@", String(describing: response))
                         capturedResponse = response
                         return true
                     }

@@ -11,6 +11,7 @@ import RileyLinkKit
 import RileyLinkKitUI
 import RileyLinkBLEKit
 import MinimedKit
+import MinimedKitUI
 import NightscoutUploadKit
 
 class DeviceDataManager {
@@ -42,11 +43,7 @@ class DeviceDataManager {
         }
         set {
             if let settings = newValue {
-                if let pumpOps = pumpOps {
-                    pumpOps.updateSettings(settings)
-                } else {
-                    pumpOps = PumpOps(pumpSettings: settings, pumpState: nil, delegate: self)
-                }
+                pumpOps = PumpOps(pumpSettings: settings, pumpState: nil, delegate: self)
             } else {
                 pumpOps = nil
             }
@@ -94,7 +91,7 @@ class DeviceDataManager {
     }
 
 
-    var latestPolledPumpStatus: RileyLinkKit.PumpStatus? {
+    var latestPolledPumpStatus: MinimedKit.PumpStatus? {
         didSet {
             if let update = latestPolledPumpStatus {
                 latestPumpStatusDate = update.clock.date
@@ -256,7 +253,7 @@ class DeviceDataManager {
                     let status = try session.getCurrentPumpStatus()
                     DispatchQueue.main.async {
                         self.latestPolledPumpStatus = status
-                        let battery = BatteryStatus(voltage: status.batteryVolts, status: BatteryIndicator(batteryStatus: status.batteryStatus))
+                        let battery = BatteryStatus(voltage: status.batteryVolts.converted(to: .volts).value, status: BatteryIndicator(batteryStatus: status.batteryStatus))
                         guard let date = status.clock.date else {
                             print("Could not interpret clock")
                             return
@@ -404,11 +401,5 @@ extension DeviceDataManager: PumpOpsDelegate {
         }
 
         UserDefaults.standard.pumpState = state
-
-        NotificationCenter.default.post(
-            name: .PumpOpsStateDidChange,
-            object: pumpOps,
-            userInfo: [PumpOps.notificationPumpStateKey: state]
-        )
     }
 }

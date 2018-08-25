@@ -30,21 +30,25 @@ class AuthenticationViewController<T: ServiceAuthentication>: UITableViewControl
                 }) 
 
                 tableView.reloadSections(IndexSet(integersIn: 0...1), with: .automatic)
-                authentication.verify { [unowned self] (success, error) in
+                authentication.verify { [weak self] (success, error) in
+                    guard let strongSelf = self else {
+                        return
+                    }
+
                     DispatchQueue.main.async {
                         UIView.animate(withDuration: 0.25, animations: {
-                            self.navigationItem.titleView = nil
-                            self.navigationItem.hidesBackButton = false
+                            strongSelf.navigationItem.titleView = nil
+                            strongSelf.navigationItem.hidesBackButton = false
                         }) 
 
                         if success {
-                            self.state = .authorized
+                            strongSelf.state = .authorized
                         } else {
                             if let error = error {
-                                self.presentAlertControllerWithError(error)
+                                strongSelf.presentAlertControllerWithError(error)
                             }
 
-                            self.state = .unauthorized
+                            strongSelf.state = .unauthorized
                         }
                     }
                 }
@@ -105,10 +109,10 @@ class AuthenticationViewController<T: ServiceAuthentication>: UITableViewControl
 
             switch state {
             case .authorized:
-                cell.button.setTitle(NSLocalizedString("Delete Account", comment: "The title of the button to remove the credentials for a service"), for: UIControlState())
+                cell.button.setTitle(LocalizedString("Delete Account", comment: "The title of the button to remove the credentials for a service"), for: UIControlState())
                 cell.button.setTitleColor(UIColor.deleteColor, for: UIControlState())
             case .empty, .unauthorized, .verifying:
-                cell.button.setTitle(NSLocalizedString("Add Account", comment: "The title of the button to add the credentials for a service"), for: UIControlState())
+                cell.button.setTitle(LocalizedString("Add Account", comment: "The title of the button to add the credentials for a service"), for: UIControlState())
                 cell.button.setTitleColor(nil, for: UIControlState())
             }
 
@@ -132,7 +136,7 @@ class AuthenticationViewController<T: ServiceAuthentication>: UITableViewControl
             cell.textField.isSecureTextEntry = credential.isSecret
             cell.textField.returnKeyType = (indexPath.row < authentication.credentials.count - 1) ? .next : .done
             cell.textField.text = credential.value
-            cell.textField.placeholder = credential.placeholder ?? NSLocalizedString("Required", comment: "The default placeholder string for a credential")
+            cell.textField.placeholder = credential.placeholder ?? LocalizedString("Required", comment: "The default placeholder string for a credential")
 
             cell.textField.delegate = self
 

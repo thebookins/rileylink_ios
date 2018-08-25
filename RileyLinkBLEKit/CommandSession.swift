@@ -51,6 +51,27 @@ public enum CC111XRegister: UInt8 {
     case paTable0 = 0x2e
 }
 
+public struct RileyLinkStatistics {
+    public let uptime: TimeInterval
+    public let radioRxOverflowCount: UInt16
+    public let radioRxFifoOverflowCount: UInt16
+    public let packetRxCount: UInt16
+    public let packetTxCount: UInt16
+    public let crcFailureCount: UInt16
+    public let spiSyncFailureCount: UInt16
+    
+    public init(uptime: TimeInterval, radioRxOverflowCount: UInt16, radioRxFifoOverflowCount: UInt16, packetRxCount: UInt16, packetTxCount: UInt16, crcFailureCount: UInt16, spiSyncFailureCount: UInt16) {
+        self.uptime = uptime
+        self.radioRxOverflowCount = radioRxOverflowCount
+        self.radioRxFifoOverflowCount = radioRxFifoOverflowCount
+        self.packetRxCount = packetRxCount
+        self.packetTxCount = packetTxCount
+        self.crcFailureCount = crcFailureCount
+        self.spiSyncFailureCount = spiSyncFailureCount
+    }
+    
+}
+
 public struct CommandSession {
     let manager: PeripheralManager
     let responseType: PeripheralManager.ResponseType
@@ -106,6 +127,14 @@ public struct CommandSession {
         let command = UpdateRegister(address, value: value, firmwareVersion: firmwareVersion)
         _ = try writeCommand(command, timeout: 0)
     }
+    
+    /// - Throws: RileyLinkDeviceError
+    public func enableCCLEDs() throws {
+        let enableBlue = SetLEDMode(.blue, mode: .auto)
+        _ = try writeCommand(enableBlue, timeout: 0)
+        let enableGreen = SetLEDMode(.green, mode: .auto)
+        _ = try writeCommand(enableGreen, timeout: 0)
+    }
 
     private static let xtalFrequency = Measurement<UnitFrequency>(value: 24, unit: .megahertz)
 
@@ -141,7 +170,7 @@ public struct CommandSession {
             listenChannel: 0,
             timeoutMS: UInt32(clamping: Int(timeout.milliseconds)),
             retryCount: UInt8(clamping: retryCount),
-            preambleExtendMS: 0,
+            preambleExtensionMS: 0,
             firmwareVersion: firmwareVersion
         )
 
@@ -174,7 +203,7 @@ public struct CommandSession {
             sendChannel: UInt8(clamping: channel),
             repeatCount: 0,
             delayBetweenPacketsMS: 0,
-            preambleExtendMS: 0,
+            preambleExtensionMS: 0,
             firmwareVersion: firmwareVersion
         )
 
@@ -194,5 +223,25 @@ public struct CommandSession {
         guard response.code == .success else {
             throw RileyLinkDeviceError.invalidInput(String(describing: swEncodingType))
         }
+    }
+    
+    public func resetRadioConfig() throws {
+        guard firmwareVersion.supportsResetRadioConfig else {
+            return
+        }
+        
+        let command = ResetRadioConfig()
+        _ = try writeCommand(command, timeout: 0)
+    }
+    
+    public func getRileyLinkStatistics() throws -> RileyLinkStatistics {
+        guard firmwareVersion.supportsRileyLinkStatistics else {
+            throw RileyLinkDeviceError.unsupportedCommand(.getStatistics)
+        }
+        
+        let command = GetStatistics()
+        let response: GetStatisticsResponse = try writeCommand(command, timeout: 0)
+        
+        return response.statistics
     }
 }
