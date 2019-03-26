@@ -47,7 +47,7 @@ public class NightscoutEntry: DictionaryRepresentable {
     public var dictionaryRepresentation: [String: Any] {
         var representation: [String: Any] = [
             "device": device,
-            "date": timestamp.timeIntervalSince1970 * 1000,
+            "date": round(timestamp.timeIntervalSince1970 * 1000),
             "dateString": TimeFormat.timestampStrFromDate(timestamp)
         ]
         
