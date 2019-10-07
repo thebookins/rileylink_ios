@@ -5,6 +5,12 @@
 
 import Foundation
 
+fileprivate let timeZoneMap = (-18...18).reduce(into: [String: String]()) { (dict, hour) in
+    let from = TimeZone(secondsFromGMT: 3600 * hour)!.identifier
+    let to = String(format: "ETC/GMT%+d", hour * -1)
+    dict[from] = to
+}
+
 public class ProfileSet {
     
     public struct ScheduleItem {
@@ -53,7 +59,7 @@ public class ProfileSet {
                 "dia": dia.hours,
                 "carbs_hr": "0",
                 "delay": "0",
-                "timezone": timezone.identifier,
+                "timezone": timeZoneMap[timezone.identifier] ?? timezone.identifier,
                 "target_low": targetLow.map { $0.dictionaryRepresentation },
                 "target_high": targetHigh.map { $0.dictionaryRepresentation },
                 "sens": sensitivity.map { $0.dictionaryRepresentation },
@@ -108,7 +114,7 @@ public struct TemporaryScheduleOverride {
     let duration: TimeInterval
     let name: String?
 
-    public init(targetRange: ClosedRange<Double>?, insulinNeedsScaleFactor: Double?, symbol: String?, duration: TimeInterval, name: String?) {
+    public init(duration: TimeInterval, targetRange: ClosedRange<Double>?, insulinNeedsScaleFactor: Double?, symbol: String?, name: String?) {
         self.targetRange = targetRange
         self.insulinNeedsScaleFactor = insulinNeedsScaleFactor
         self.symbol = symbol
@@ -136,7 +142,7 @@ public struct TemporaryScheduleOverride {
         if let name = name {
             rval["name"] = name
         }
-
+        
         return rval
     }
 }
@@ -149,8 +155,11 @@ public struct LoopSettings {
     let preMealTargetRange: ClosedRange<Double>?
     let maximumBasalRatePerHour: Double?
     let maximumBolus: Double?
+    let deviceToken: Data?
+    let bundleIdentifier: String?
 
-    public init(dosingEnabled: Bool, overridePresets: [TemporaryScheduleOverride], scheduleOverride: TemporaryScheduleOverride?, minimumBGGuard: Double?, preMealTargetRange: ClosedRange<Double>?, maximumBasalRatePerHour: Double?, maximumBolus: Double?) {
+    public init(dosingEnabled: Bool, overridePresets: [TemporaryScheduleOverride], scheduleOverride: TemporaryScheduleOverride?, minimumBGGuard: Double?, preMealTargetRange: ClosedRange<Double>?, maximumBasalRatePerHour: Double?, maximumBolus: Double?,
+                deviceToken: Data?, bundleIdentifier: String?) {
         self.dosingEnabled = dosingEnabled
         self.overridePresets = overridePresets
         self.scheduleOverride = scheduleOverride
@@ -158,6 +167,8 @@ public struct LoopSettings {
         self.preMealTargetRange = preMealTargetRange
         self.maximumBasalRatePerHour = maximumBasalRatePerHour
         self.maximumBolus = maximumBolus
+        self.deviceToken = deviceToken
+        self.bundleIdentifier = bundleIdentifier
     }
 
     public var dictionaryRepresentation: [String: Any] {
@@ -185,6 +196,14 @@ public struct LoopSettings {
 
         if let maximumBolus = maximumBolus {
             rval["maximumBolus"] = maximumBolus
+        }
+        
+        if let deviceToken = deviceToken {
+            rval["deviceToken"] = deviceToken.hexadecimalString
+        }
+        
+        if let bundleIdentifier = bundleIdentifier {
+            rval["bundleIdentifier"] = bundleIdentifier
         }
 
         return rval
