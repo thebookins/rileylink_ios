@@ -183,6 +183,7 @@ public class NightscoutUploader {
             direction: direction
         )
         entries.append(entry)
+        flushAll()
     }
     
     // MARK: - Profiles
