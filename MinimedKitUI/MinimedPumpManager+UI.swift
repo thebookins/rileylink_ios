@@ -5,7 +5,6 @@
 //  Copyright © 2018 LoopKit Authors. All rights reserved.
 //
 
-import SwiftUI
 import UIKit
 import LoopKit
 import LoopKitUI
@@ -14,33 +13,26 @@ import MinimedKit
 
 extension MinimedPumpManager: PumpManagerUI {
 
-    static public func setupViewController(insulinTintColor: Color, guidanceColors: GuidanceColors) -> (UIViewController & PumpManagerSetupViewController & CompletionNotifying) {
+    static public func setupViewController() -> (UIViewController & PumpManagerSetupViewController & CompletionNotifying) {
         return MinimedPumpManagerSetupViewController.instantiateFromStoryboard()
     }
 
-    public func settingsViewController(insulinTintColor: Color, guidanceColors: GuidanceColors) -> (UIViewController & CompletionNotifying) {
+    public func settingsViewController() -> (UIViewController & CompletionNotifying) {
         let settings = MinimedPumpSettingsViewController(pumpManager: self)
         let nav = SettingsNavigationViewController(rootViewController: settings)
         return nav
     }
-    
-    public func deliveryUncertaintyRecoveryViewController(insulinTintColor: Color, guidanceColors: GuidanceColors) -> (UIViewController & CompletionNotifying) {
-        // Return settings for now. No uncertainty handling atm.
-        let settings = MinimedPumpSettingsViewController(pumpManager: self)
-        let nav = SettingsNavigationViewController(rootViewController: settings)
-        return nav
-    }
-    
+
     public var smallImage: UIImage? {
         return state.smallPumpImage
     }
     
-    public func hudProvider(insulinTintColor: Color, guidanceColors: GuidanceColors) -> HUDProvider? {
-        return MinimedHUDProvider(pumpManager: self, insulinTintColor: insulinTintColor, guidanceColors: guidanceColors)
+    public func hudProvider() -> HUDProvider? {
+        return MinimedHUDProvider(pumpManager: self)
     }
     
-    public static func createHUDView(rawValue: HUDProvider.HUDViewRawState) -> LevelHUDView? {
-        return MinimedHUDProvider.createHUDView(rawValue: rawValue)
+    public static func createHUDViews(rawValue: HUDProvider.HUDViewsRawState) -> [BaseHUDView] {
+        return MinimedHUDProvider.createHUDViews(rawValue: rawValue)
     }
 }
 
@@ -88,11 +80,19 @@ extension MinimedPumpManager {
 // MARK: - BasalScheduleTableViewControllerSyncSource
 extension MinimedPumpManager {
     public func syncScheduleValues(for viewController: BasalScheduleTableViewController, completion: @escaping (SyncBasalScheduleResult<Double>) -> Void) {
-        syncBasalRateSchedule(items: viewController.scheduleItems) { result in
-            switch result {
-            case .success(let schedule):
-                completion(.success(scheduleItems: schedule.items, timeZone: schedule.timeZone))
-            case .failure(let error):
+        pumpOps.runSession(withName: "Save Basal Profile", using: rileyLinkDeviceProvider.firstConnectedDevice) { (session) in
+            guard let session = session else {
+                completion(.failure(PumpManagerError.connection(MinimedPumpManagerError.noRileyLink)))
+                return
+            }
+
+            do {
+                let newSchedule = BasalSchedule(repeatingScheduleValues: viewController.scheduleItems)
+                try session.setBasalSchedule(newSchedule, for: .standard)
+
+                completion(.success(scheduleItems: viewController.scheduleItems, timeZone: session.pump.timeZone))
+            } catch let error {
+                self.log.error("Save basal profile failed: %{public}@", String(describing: error))
                 completion(.failure(error))
             }
         }

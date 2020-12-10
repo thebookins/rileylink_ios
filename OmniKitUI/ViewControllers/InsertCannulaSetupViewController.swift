@@ -33,6 +33,8 @@ class InsertCannulaSetupViewController: SetupTableViewController {
         }
     }
     
+    private var cancelErrorCount = 0
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -59,7 +61,6 @@ class InsertCannulaSetupViewController: SetupTableViewController {
         case initial
         case startingInsertion
         case inserting(finishTime: CFTimeInterval)
-        case needsCheckInsertion
         case fault
         case ready
     }
@@ -70,7 +71,7 @@ class InsertCannulaSetupViewController: SetupTableViewController {
             case .initial:
                 activityIndicator.state = .hidden
                 footerView.primaryButton.isEnabled = true
-                footerView.primaryButton.setInsertCannulaTitle()
+                footerView.primaryButton.setConnectTitle()
             case .startingInsertion:
                 activityIndicator.state = .indeterminantProgress
                 footerView.primaryButton.isEnabled = false
@@ -79,10 +80,6 @@ class InsertCannulaSetupViewController: SetupTableViewController {
                 activityIndicator.state = .timedProgress(finishTime: CACurrentMediaTime() + finishTime)
                 footerView.primaryButton.isEnabled = false
                 lastError = nil
-            case .needsCheckInsertion:
-                activityIndicator.state = .hidden
-                footerView.primaryButton.isEnabled = true
-                footerView.primaryButton.setRecheckInsertionTitle()
             case .fault:
                 activityIndicator.state = .hidden
                 footerView.primaryButton.isEnabled = true
@@ -118,34 +115,18 @@ class InsertCannulaSetupViewController: SetupTableViewController {
             }
             loadingText = errorText
             
-            // If we have an error, update the continue state depending on whether the cannula insertion was started
+            // If we have an error, update the continue state
             if let podCommsError = lastError as? PodCommsError {
                 switch podCommsError {
                 case .podFault, .activationTimeExceeded:
                     continueState = .fault
                 default:
-                    continueState = initialOrNeedsCannulaInsertionCheck
+                    continueState = .initial
                 }
             } else if lastError != nil {
-                continueState = initialOrNeedsCannulaInsertionCheck
+                continueState = .initial
             }
         }
-    }
-
-    // .needsCheckInsertion (if cannula insertion has been started but its completion hasn't been verified) or else .initial
-    private var initialOrNeedsCannulaInsertionCheck: State {
-        if pumpManager.state.podState?.setupProgress == .cannulaInserting {
-            return .needsCheckInsertion
-        }
-        return .initial
-    }
-
-    // .ready (if pod setup has been verifed to be complete) or else .needsCheckInsertion
-    private var readyOrNeedsCannulaInsertionCheck: State {
-        if pumpManager.state.podState?.setupProgress == .completed {
-            return .ready
-        }
-        return .needsCheckInsertion
     }
 
     private func navigateToReplacePod() {
@@ -157,16 +138,12 @@ class InsertCannulaSetupViewController: SetupTableViewController {
         case .initial:
             continueState = .startingInsertion
             insertCannula()
-        case .needsCheckInsertion:
-            checkCannulaInsertionFinished()
-            if pumpManager.state.podState?.setupProgress == .completed {
-                super.continueButtonPressed(sender)
-            }
         case .ready:
             super.continueButtonPressed(sender)
         case .fault:
             navigateToReplacePod()
-        case .startingInsertion, .inserting:
+        case .startingInsertion,
+             .inserting:
             break
         }
     }
@@ -179,10 +156,6 @@ class InsertCannulaSetupViewController: SetupTableViewController {
     }
     
     private func insertCannula() {
-        guard let podState = pumpManager.state.podState, podState.setupProgress.needsCannulaInsertion else {
-            self.continueState = readyOrNeedsCannulaInsertionCheck
-            return
-        }
         pumpManager.insertCannula() { (result) in
             DispatchQueue.main.async {
                 switch(result) {
@@ -191,10 +164,10 @@ class InsertCannulaSetupViewController: SetupTableViewController {
                     let delay = finishTime
                     if delay > 0 {
                         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                            self.checkCannulaInsertionFinished() // now check if actually ready
+                            self.continueState = .ready
                         }
                     } else {
-                        self.continueState = self.readyOrNeedsCannulaInsertionCheck
+                        self.continueState = .ready
                     }
                 case .failure(let error):
                     self.lastError = error
@@ -202,26 +175,11 @@ class InsertCannulaSetupViewController: SetupTableViewController {
             }
         }
     }
-
-    private func checkCannulaInsertionFinished() {
-        activityIndicator.state = .indeterminantProgress
-        self.pumpManager.checkCannulaInsertionFinished() { (error) in
-            DispatchQueue.main.async {
-                if let error = error {
-                    self.lastError = error
-                }
-                self.continueState = self.readyOrNeedsCannulaInsertionCheck
-            }
-        }
-    }
 }
 
 private extension SetupButton {
-    func setInsertCannulaTitle() {
+    func setConnectTitle() {
         setTitle(LocalizedString("Insert Cannula", comment: "Button title to insert cannula during setup"), for: .normal)
-    }
-    func setRecheckInsertionTitle() {
-        setTitle(LocalizedString("Recheck Cannula Insertion", comment: "Button title to recheck cannula insertion during setup"), for: .normal)
     }
     func setDeactivateTitle() {
         setTitle(LocalizedString("Deactivate", comment: "Button title to deactivate pod because of fault during setup"), for: .normal)

@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import SwiftUI
+
 import UIKit
 import LoopKit
 import LoopKitUI
@@ -15,35 +15,26 @@ import OmniKit
 
 extension OmnipodPumpManager: PumpManagerUI {
     
-    static public func setupViewController(insulinTintColor: Color, guidanceColors: GuidanceColors) -> (UIViewController & PumpManagerSetupViewController & CompletionNotifying) {
+    static public func setupViewController() -> (UIViewController & PumpManagerSetupViewController & CompletionNotifying) {
         return OmnipodPumpManagerSetupViewController.instantiateFromStoryboard()        
     }
     
-    public func settingsViewController(insulinTintColor: Color, guidanceColors: GuidanceColors) -> (UIViewController & CompletionNotifying) {
-        let settings = OmnipodSettingsViewController(pumpManager: self)
-        let nav = SettingsNavigationViewController(rootViewController: settings)
-        return nav
-    }
-
-    public func deliveryUncertaintyRecoveryViewController(insulinTintColor: Color, guidanceColors: GuidanceColors) -> (UIViewController & CompletionNotifying) {
-        
-        // Return settings for now; uncertainty recovery not implemented yet
+    public func settingsViewController() -> (UIViewController & CompletionNotifying) {
         let settings = OmnipodSettingsViewController(pumpManager: self)
         let nav = SettingsNavigationViewController(rootViewController: settings)
         return nav
     }
     
-
     public var smallImage: UIImage? {
         return UIImage(named: "Pod", in: Bundle(for: OmnipodSettingsViewController.self), compatibleWith: nil)!
     }
     
-    public func hudProvider(insulinTintColor: Color, guidanceColors: GuidanceColors) -> HUDProvider? {
-        return OmnipodHUDProvider(pumpManager: self, insulinTintColor: insulinTintColor, guidanceColors: guidanceColors)
+    public func hudProvider() -> HUDProvider? {
+        return OmnipodHUDProvider(pumpManager: self)
     }
     
-    public static func createHUDView(rawValue: HUDProvider.HUDViewRawState) -> LevelHUDView? {
-        return OmnipodHUDProvider.createHUDView(rawValue: rawValue)
+    public static func createHUDViews(rawValue: HUDProvider.HUDViewsRawState) -> [BaseHUDView] {
+        return OmnipodHUDProvider.createHUDViews(rawValue: rawValue)
     }
 
 }
@@ -77,12 +68,12 @@ extension OmnipodPumpManager {
 extension OmnipodPumpManager {
 
     public func syncScheduleValues(for viewController: BasalScheduleTableViewController, completion: @escaping (SyncBasalScheduleResult<Double>) -> Void) {
-        syncBasalRateSchedule(items: viewController.scheduleItems) { result in
-            switch result {
-            case .success(let schedule):
-                completion(.success(scheduleItems: schedule.items, timeZone: schedule.timeZone))
-            case .failure(let error):
+        let newSchedule = BasalSchedule(repeatingScheduleValues: viewController.scheduleItems)
+        setBasalSchedule(newSchedule) { (error) in
+            if let error = error {
                 completion(.failure(error))
+            } else {
+                completion(.success(scheduleItems: viewController.scheduleItems, timeZone: self.state.timeZone))
             }
         }
     }
