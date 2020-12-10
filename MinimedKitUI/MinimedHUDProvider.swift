@@ -10,7 +10,6 @@ import Foundation
 import LoopKit
 import LoopKitUI
 import MinimedKit
-import SwiftUI
 
 class MinimedHUDProvider: HUDProvider {
 
@@ -24,6 +23,10 @@ class MinimedHUDProvider: HUDProvider {
                 return
             }
 
+            if oldValue.batteryPercentage != state.batteryPercentage {
+                self.updateBatteryView()
+            }
+
             if oldValue.lastReservoirReading != state.lastReservoirReading {
                 self.updateReservoirView()
             }
@@ -31,28 +34,25 @@ class MinimedHUDProvider: HUDProvider {
     }
 
     private let pumpManager: MinimedPumpManager
-    
-    private let insulinTintColor: Color
-    
-    private let guidanceColors: GuidanceColors
 
-    public init(pumpManager: MinimedPumpManager, insulinTintColor: Color, guidanceColors: GuidanceColors) {
+    public init(pumpManager: MinimedPumpManager) {
         self.pumpManager = pumpManager
         self.state = pumpManager.state
-        self.insulinTintColor = insulinTintColor
-        self.guidanceColors = guidanceColors
         pumpManager.stateObservers.insert(self, queue: .main)
     }
 
     var visible: Bool = false {
         didSet {
             if oldValue != visible && visible {
+                self.updateBatteryView()
                 self.updateReservoirView()
             }
         }
     }
 
     private weak var reservoirView: ReservoirVolumeHUDView?
+
+    private weak var batteryView: BatteryLevelHUDView?
 
     private func updateReservoirView() {
         if let lastReservoirVolume = state.lastReservoirReading,
@@ -64,25 +64,35 @@ class MinimedHUDProvider: HUDProvider {
         }
     }
 
-    public func createHUDView() -> LevelHUDView? {
+    private func updateBatteryView() {
+        if let batteryView = batteryView {
+            batteryView.batteryLevel = state.batteryPercentage
+        }
+    }
+
+    public func createHUDViews() -> [BaseHUDView] {
 
         reservoirView = ReservoirVolumeHUDView.instantiate()
+        batteryView = BatteryLevelHUDView.instantiate()
 
         if visible {
             updateReservoirView()
+            updateBatteryView()
         }
 
-        return reservoirView
+        return [reservoirView, batteryView].compactMap { $0 }
     }
 
     public func didTapOnHUDView(_ view: BaseHUDView) -> HUDTapAction? {
-        return HUDTapAction.presentViewController(pumpManager.settingsViewController(insulinTintColor: insulinTintColor, guidanceColors: guidanceColors))
+        return HUDTapAction.presentViewController(pumpManager.settingsViewController())
     }
 
-    public var hudViewRawState: HUDProvider.HUDViewRawState {
-        var rawValue: HUDProvider.HUDViewRawState = [
+    public var hudViewsRawState: HUDProvider.HUDViewsRawState {
+        var rawValue: HUDProvider.HUDViewsRawState = [
             "pumpReservoirCapacity": pumpManager.pumpReservoirCapacity
         ]
+
+        rawValue["batteryPercentage"] = state.batteryPercentage
 
         if let lastReservoirReading = state.lastReservoirReading {
             rawValue["lastReservoirReading"] = lastReservoirReading.rawValue
@@ -91,10 +101,12 @@ class MinimedHUDProvider: HUDProvider {
         return rawValue
     }
 
-    public static func createHUDView(rawValue: HUDProvider.HUDViewRawState) -> LevelHUDView? {
+    public static func createHUDViews(rawValue: HUDProvider.HUDViewsRawState) -> [BaseHUDView] {
         guard let pumpReservoirCapacity = rawValue["pumpReservoirCapacity"] as? Double else {
-            return nil
+            return []
         }
+
+        let batteryPercentage = rawValue["batteryPercentage"] as? Double
 
         let reservoirVolumeHUDView = ReservoirVolumeHUDView.instantiate()
         if let rawLastReservoirReading = rawValue["lastReservoirReading"] as? ReservoirReading.RawValue,
@@ -104,8 +116,11 @@ class MinimedHUDProvider: HUDProvider {
             reservoirVolumeHUDView.level = reservoirLevel
             reservoirVolumeHUDView.setReservoirVolume(volume: lastReservoirReading.units, at: lastReservoirReading.validAt)
         }
-        
-        return reservoirVolumeHUDView
+
+        let batteryLevelHUDView = BatteryLevelHUDView.instantiate()
+        batteryLevelHUDView.batteryLevel = batteryPercentage
+
+        return [reservoirVolumeHUDView, batteryLevelHUDView]
     }
 }
 

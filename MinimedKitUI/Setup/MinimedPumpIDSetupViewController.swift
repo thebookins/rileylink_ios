@@ -65,11 +65,11 @@ class MinimedPumpIDSetupViewController: SetupTableViewController {
     
     private var pumpFirmwareVersion: String?
 
-    var maxBasalRateUnitsPerHour: Double!
+    var maxBasalRateUnitsPerHour: Double?
 
-    var maxBolusUnits: Double!
+    var maxBolusUnits: Double?
 
-    var basalSchedule: BasalRateSchedule!
+    var basalSchedule: BasalRateSchedule?
 
     private var isSentrySetUpNeeded: Bool = false
 
@@ -236,7 +236,7 @@ class MinimedPumpIDSetupViewController: SetupTableViewController {
         }
     }
 
-    private func setupPump(with settings: PumpSettings) {
+    private func readPumpState(with settings: PumpSettings) {
         continueState = .reading
 
         let pumpOps = PumpOps(pumpSettings: settings, pumpState: pumpState, delegate: self)
@@ -279,15 +279,16 @@ class MinimedPumpIDSetupViewController: SetupTableViewController {
                 }
 
                 // Settings
-                let newSchedule = BasalSchedule(repeatingScheduleValues: self.basalSchedule.items)
-                try session.setBasalSchedule(newSchedule, for: .standard)
-                try session.setMaxBolus(units: self.maxBolusUnits)
-                try session.setMaxBasalRate(unitsPerHour: self.maxBasalRateUnitsPerHour)
+                let settings = try session.getSettings()
+                let basalRateSchedule = try session.getBasalRateSchedule(for: .standard)
                 try session.selectBasalProfile(.standard)
                 try session.setTimeToNow(in: .current)
 
                 DispatchQueue.main.async {
                     self.isSentrySetUpNeeded = isSentrySetUpNeeded
+                    self.maxBasalRateUnitsPerHour = settings.maxBasal
+                    self.maxBolusUnits = settings.maxBolus
+                    self.basalSchedule = basalRateSchedule
 
                     if self.pumpState != nil {
                         self.continueState = .completed
@@ -321,7 +322,7 @@ class MinimedPumpIDSetupViewController: SetupTableViewController {
                 "523")!)
             self.pumpFirmwareVersion = "2.4Mock"
 #else
-            setupPump(with: PumpSettings(pumpID: pumpID, pumpRegion: pumpRegion))
+            readPumpState(with: PumpSettings(pumpID: pumpID, pumpRegion: pumpRegion))
 #endif
         }
     }
